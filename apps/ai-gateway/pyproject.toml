@@ -22,7 +22,7 @@ dev = ["pytest>=8", "ruff>=0.6"]
 loadgen = "gateway.loadgen:main"
 
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=84.2.1"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
