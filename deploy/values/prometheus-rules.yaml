@@ -1,0 +1,89 @@
+# SLO rules for the AI Gateway (plain YAML, not templated: {{ $labels }} stays literal).
+# SLI "availability": share of LLM calls without an upstream error. Target 99 %.
+# Guardrail blocks and rate-limit rejections are the gateway doing its job, so they
+# are not part of the SLI. Burn-rate alerts follow the Google SRE workbook (multiwindow).
+serverFiles:
+  recording_rules.yml:
+    groups:
+      - name: ai-gateway-slo
+        interval: 30s
+        rules:
+          - record: slo:sli_error:ratio_rate5m
+            expr: |
+              sum(rate(gen_ai_client_operation_duration_seconds_count{job=~".*ai-gateway",error_type!=""}[5m]))
+              / clamp_min(sum(rate(gen_ai_client_operation_duration_seconds_count{job=~".*ai-gateway"}[5m])), 1e-9)
+          - record: slo:sli_error:ratio_rate30m
+            expr: |
+              sum(rate(gen_ai_client_operation_duration_seconds_count{job=~".*ai-gateway",error_type!=""}[30m]))
+              / clamp_min(sum(rate(gen_ai_client_operation_duration_seconds_count{job=~".*ai-gateway"}[30m])), 1e-9)
+          - record: slo:sli_error:ratio_rate1h
+            expr: |
+              sum(rate(gen_ai_client_operation_duration_seconds_count{job=~".*ai-gateway",error_type!=""}[1h]))
+              / clamp_min(sum(rate(gen_ai_client_operation_duration_seconds_count{job=~".*ai-gateway"}[1h])), 1e-9)
+          - record: slo:sli_error:ratio_rate6h
+            expr: |
+              sum(rate(gen_ai_client_operation_duration_seconds_count{job=~".*ai-gateway",error_type!=""}[6h]))
+              / clamp_min(sum(rate(gen_ai_client_operation_duration_seconds_count{job=~".*ai-gateway"}[6h])), 1e-9)
+          - record: llm:latency_seconds:p95_5m
+            expr: |
+              histogram_quantile(0.95, sum by (le) (rate(gen_ai_client_operation_duration_seconds_bucket{job=~".*ai-gateway"}[5m])))
+          - record: llm:cost_usd:rate1h_by_tenant
+            expr: sum by (llm_gateway_tenant) (rate(llm_gateway_cost_total[1h])) * 3600
+
+  alerting_rules.yml:
+    groups:
+      - name: ai-gateway-alerts
+        rules:
+          - alert: GatewayErrorBudgetFastBurn
+            expr: slo:sli_error:ratio_rate1h > (14.4 * 0.01) and slo:sli_error:ratio_rate5m > (14.4 * 0.01)
+            for: 2m
+            labels: {severity: page, slo: availability}
+            annotations:
+              summary: AI Gateway burns its error budget 14x too fast
+              description: "1h error ratio is {{ $value | humanizePercentage }}. At this rate 2 % of the 30-day budget is gone in 1 hour."
+              runbook_url: https://github.com/Mistral-valaise/llm-observability-lab/blob/main/docs/runbooks/error-budget-burn.md
+          - alert: GatewayErrorBudgetSlowBurn
+            expr: slo:sli_error:ratio_rate6h > (6 * 0.01) and slo:sli_error:ratio_rate30m > (6 * 0.01)
+            for: 15m
+            labels: {severity: ticket, slo: availability}
+            annotations:
+              summary: AI Gateway burns its error budget 6x too fast
+              description: "6h error ratio is {{ $value | humanizePercentage }}."
+              runbook_url: https://github.com/Mistral-valaise/llm-observability-lab/blob/main/docs/runbooks/error-budget-burn.md
+          - alert: GatewayLatencyHigh
+            expr: llm:latency_seconds:p95_5m > 2.56
+            for: 10m
+            labels: {severity: ticket, slo: latency}
+            annotations:
+              summary: AI Gateway p95 latency above 2.56 s
+              description: "p95 is {{ $value | humanizeDuration }}. Open an exemplar in Grafana to jump to a slow trace."
+              runbook_url: https://github.com/Mistral-valaise/llm-observability-lab/blob/main/docs/runbooks/latency.md
+          - alert: PromptInjectionSpike
+            expr: sum(rate(llm_gateway_guardrail_blocks_total{llm_gateway_guardrail_reason="prompt_injection"}[5m])) > 0.2
+            for: 5m
+            labels: {severity: ticket, category: security}
+            annotations:
+              summary: More than 0.2 prompt-injection attempts per second
+              description: "Check which tenant sends them: sum by (llm_gateway_tenant) (rate(llm_gateway_guardrail_blocks_total[5m]))."
+              runbook_url: https://github.com/Mistral-valaise/llm-observability-lab/blob/main/docs/runbooks/security-signals.md
+          - alert: AuthFailuresSpike
+            expr: sum(rate(llm_gateway_auth_failures_total[5m])) > 0.5
+            for: 5m
+            labels: {severity: ticket, category: security}
+            annotations:
+              summary: Many requests with invalid API keys (possible key guessing)
+              runbook_url: https://github.com/Mistral-valaise/llm-observability-lab/blob/main/docs/runbooks/security-signals.md
+          - alert: TenantSpendHigh
+            expr: llm:cost_usd:rate1h_by_tenant > 1
+            for: 15m
+            labels: {severity: ticket, category: cost}
+            annotations:
+              summary: "Tenant {{ $labels.llm_gateway_tenant }} spends more than 1 USD per hour"
+          - alert: TelemetryExportFailing
+            expr: sum(rate(otelcol_exporter_send_failed_spans_total[5m])) > 0 or sum(rate(otelcol_exporter_send_failed_metric_points_total[5m])) > 0
+            for: 10m
+            labels: {severity: ticket, category: observability}
+            annotations:
+              summary: The collector fails to export telemetry
+              description: "We are flying blind. Check the collector logs and backend health."
+              runbook_url: https://github.com/Mistral-valaise/llm-observability-lab/blob/main/docs/runbooks/telemetry-pipeline.md

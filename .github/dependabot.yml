@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+  - package-ecosystem: pip
+    directory: /apps/ai-gateway
+    schedule: {interval: weekly}
+    groups:
+      opentelemetry:
+        patterns: ["opentelemetry-*"]
+  - package-ecosystem: docker
+    directory: /apps/ai-gateway
+    schedule: {interval: weekly}

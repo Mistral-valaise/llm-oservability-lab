@@ -1,0 +1,59 @@
+# -- Set to true on OpenShift: lets the platform assign UID/GID (restricted-v2 SCC).
+openshift: false
+
+image:
+  repository: ghcr.io/mistral-valaise/llm-observability-lab/ai-gateway
+  tag: ""            # defaults to .Chart.AppVersion
+  digest: ""         # set to pin by digest (takes precedence over tag)
+  pullPolicy: IfNotPresent
+
+gateway:
+  replicas: 1        # the in-process rate limiter is per pod; keep 1 until Redis lands
+  provider: mock     # mock | openai (any OpenAI-compatible endpoint: OpenAI, Ollama, vLLM)
+  upstream:
+    baseUrl: http://ollama:11434/v1
+    # Name of an existing Secret with key "api-key". Never put the key in values.
+    existingSecret: ""
+    timeoutSeconds: 30
+  allowedModels: mock-small,mock-large
+  rateLimit:
+    rps: 5
+    burst: 10
+  maxPromptChars: 8000
+  captureContent: false
+  mock:
+    latencyMs: 350
+    errorRate: 0.01
+  # -- Tenants that get a generated API key. Keys survive upgrades (lookup).
+  tenants: [acme, globex, free-tier]
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+loadgen:
+  enabled: true
+  rps: 2
+  noisyTenant: free-tier
+  resources:
+    requests: {cpu: 20m, memory: 96Mi}
+    limits: {cpu: 200m, memory: 192Mi}
+
+otel:
+  # OTLP/gRPC endpoint of the collector. https:// enables TLS.
+  endpoint: https://otel-collector:4317
+  # Secret with ca.crt, tls.crt, tls.key for mTLS (created by the lab-platform chart).
+  tlsSecret: otel-client-tls
+  environment: demo
+
+service:
+  port: 8080
+
+networkPolicy:
+  enabled: true
+  # -- Peers allowed to reach the gateway from outside the namespace (ingress controller).
+  ingressFrom: []
+  # -- Pod labels of the collector, for the egress rule.
+  collectorPodLabels:
+    app.kubernetes.io/name: opentelemetry-collector
+  # -- Extra egress rules, e.g. to reach a real LLM API when provider=openai.
+  extraEgress: []

@@ -1,0 +1,98 @@
+# One entry point for every environment:
+#   helmfile -e k3d apply
+#   NAMESPACE=$(oc project -q) helmfile -e sandbox apply
+# Toggle components without editing files:
+#   helmfile -e k3d --state-values-set components.loki=false apply
+environments:
+  k3d:
+    values:
+      - deploy/environments/default.yaml
+      - deploy/environments/k3d.yaml
+  sandbox:
+    values:
+      - deploy/environments/default.yaml
+      - deploy/environments/sandbox.yaml.gotmpl
+---
+repositories:
+  - name: open-telemetry
+    url: https://open-telemetry.github.io/opentelemetry-helm-charts
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
+  - name: grafana-community
+    url: https://grafana-community.github.io/helm-charts
+
+helmDefaults:
+  wait: true
+  waitForJobs: true
+  timeout: 600
+  atomic: true          # failed upgrade rolls back automatically
+  cleanupOnFail: true
+  createNamespace: false
+
+commonLabels:
+  part-of: llm-observability-lab
+
+releases:
+  # Certificates, NetworkPolicies, dashboards and exposure. Everything else depends on it.
+  - name: lab-platform
+    namespace: {{ .Values.namespace }}
+    chart: ./charts/lab-platform
+    installed: {{ .Values.components.platform }}
+    values:
+      - deploy/values/lab-platform.yaml.gotmpl
+
+  - name: otel-collector
+    namespace: {{ .Values.namespace }}
+    chart: open-telemetry/opentelemetry-collector
+    version: {{ .Values.chartVersions.collector }}
+    installed: {{ .Values.components.collector }}
+    needs: [lab-platform]
+    values:
+      - deploy/values/otel-collector.yaml.gotmpl
+
+  - name: prometheus
+    namespace: {{ .Values.namespace }}
+    chart: prometheus-community/prometheus
+    version: {{ .Values.chartVersions.prometheus }}
+    installed: {{ .Values.components.prometheus }}
+    needs: [lab-platform]
+    values:
+      - deploy/values/prometheus.yaml.gotmpl
+      - deploy/values/prometheus-rules.yaml
+
+  - name: loki
+    namespace: {{ .Values.namespace }}
+    chart: grafana/loki
+    version: {{ .Values.chartVersions.loki }}
+    installed: {{ .Values.components.loki }}
+    needs: [lab-platform]
+    values:
+      - deploy/values/loki.yaml.gotmpl
+
+  - name: tempo
+    namespace: {{ .Values.namespace }}
+    chart: grafana-community/tempo
+    version: {{ .Values.chartVersions.tempo }}
+    installed: {{ .Values.components.tempo }}
+    needs: [lab-platform]
+    values:
+      - deploy/values/tempo.yaml.gotmpl
+
+  - name: grafana
+    namespace: {{ .Values.namespace }}
+    chart: grafana-community/grafana
+    version: {{ .Values.chartVersions.grafana }}
+    installed: {{ .Values.components.grafana }}
+    needs: [lab-platform]
+    values:
+      - deploy/values/grafana.yaml.gotmpl
+
+  - name: ai-gateway
+    namespace: {{ .Values.namespace }}
+    chart: ./charts/ai-gateway
+    installed: {{ .Values.components.gateway }}
+    needs: [lab-platform]
+    values:
+      - deploy/values/ai-gateway.yaml.gotmpl

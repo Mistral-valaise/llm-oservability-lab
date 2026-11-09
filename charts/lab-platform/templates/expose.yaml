@@ -1,0 +1,42 @@
+{{- $root := . }}
+{{- range .Values.expose.targets }}
+{{- if eq $root.Values.expose.mode "ingress" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .name }}
+  labels: {{- include "lab.labels" $root | nindent 4 }}
+spec:
+  {{- with $root.Values.expose.ingressClassName }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ printf "%s.%s" .name $root.Values.expose.domain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .service }}
+                port:
+                  number: {{ .port }}
+{{- else if eq $root.Values.expose.mode "route" }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ .name }}
+  labels: {{- include "lab.labels" $root | nindent 4 }}
+spec:
+  to:
+    kind: Service
+    name: {{ .service }}
+  port:
+    targetPort: {{ .targetPort }}
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}
+{{- end }}

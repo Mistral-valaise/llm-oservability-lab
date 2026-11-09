@@ -1,0 +1,9 @@
+apiVersion: v2
+name: lab-platform
+description: Namespace-scoped platform glue for the lab - mTLS certificates, default-deny NetworkPolicies, Grafana dashboards and exposure (Ingress or OpenShift Route)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: Mistral-valaise
+    url: https://github.com/Mistral-valaise

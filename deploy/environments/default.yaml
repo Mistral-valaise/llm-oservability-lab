@@ -1,0 +1,59 @@
+# Shared defaults. Environment files override only what differs.
+namespace: llm-lab
+openshift: false
+
+# Switch any component off: --state-values-set components.<name>=false
+components:
+  platform: true      # TLS, NetworkPolicies, dashboards, Ingress/Route
+  collector: true
+  prometheus: true
+  loki: true
+  tempo: true
+  grafana: true
+  gateway: true
+  loadgen: true
+
+# Pinned upstream chart versions. Bump deliberately (Renovate can open the PRs).
+chartVersions:
+  collector: 0.178.2
+  prometheus: 29.46.0
+  loki: 7.5.0
+  tempo: 3.2.1
+  grafana: 14.4.0
+
+gateway:
+  image:
+    repository: ghcr.io/mistral-valaise/llm-observability-lab/ai-gateway
+    tag: main
+    pullPolicy: Always
+  provider: mock
+  loadgenRps: 2
+
+security:
+  mtls: true
+  networkPolicies: true
+  # Drop opt-in prompt content in the collector even if a service sends it.
+  dropPromptContent: true
+
+expose:
+  mode: ingress
+  domain: localtest.me
+  ingressClassName: ""
+  # Peers allowed to reach exposed UIs from outside the namespace.
+  ingressFrom: []
+
+retention:
+  metrics: 2d
+  logs: 48h
+  traces: 24h
+
+storage:
+  className: ""       # empty = cluster default
+  prometheus: 2Gi
+  loki: 2Gi
+  tempo: 2Gi
+
+# Small footprint so the stack fits a laptop and the Sandbox quota.
+resources:
+  small: {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 500m, memory: 384Mi}}
+  medium: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 768Mi}}

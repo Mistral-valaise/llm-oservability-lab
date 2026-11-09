@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-gateway
+  labels:
+    app.kubernetes.io/name: ai-gateway
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    {{- include "aigw.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-gateway
+        {{- include "aigw.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ toJson .Values.gateway | sha256sum }}
+    spec:
+      serviceAccountName: ai-gateway
+      automountServiceAccountToken: false
+      securityContext: {{- include "aigw.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: gateway
+          image: {{ include "aigw.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PROVIDER
+              value: {{ .Values.gateway.provider | quote }}
+            - name: UPSTREAM_BASE_URL
+              value: {{ .Values.gateway.upstream.baseUrl | quote }}
+            - name: UPSTREAM_TIMEOUT_S
+              value: {{ .Values.gateway.upstream.timeoutSeconds | quote }}
+            {{- if .Values.gateway.upstream.existingSecret }}
+            - name: UPSTREAM_API_KEY_FILE
+              value: /etc/upstream/api-key
+            {{- end }}
+            - name: ALLOWED_MODELS
+              value: {{ .Values.gateway.allowedModels | quote }}
+            - name: RATE_LIMIT_RPS
+              value: {{ .Values.gateway.rateLimit.rps | quote }}
+            - name: RATE_LIMIT_BURST
+              value: {{ .Values.gateway.rateLimit.burst | quote }}
+            - name: MAX_PROMPT_CHARS
+              value: {{ .Values.gateway.maxPromptChars | quote }}
+            - name: CAPTURE_CONTENT
+              value: {{ .Values.gateway.captureContent | quote }}
+            - name: MOCK_LATENCY_MS
+              value: {{ .Values.gateway.mock.latencyMs | quote }}
+            - name: MOCK_ERROR_RATE
+              value: {{ .Values.gateway.mock.errorRate | quote }}
+            - name: GATEWAY_API_KEYS_FILE
+              value: /etc/gateway/api-keys
+            - name: GATEWAY_ADMIN_KEY_FILE
+              value: /etc/gateway/admin-key
+            - name: OTEL_SERVICE_NAME
+              value: ai-gateway
+            {{- include "aigw.otelEnv" . | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          resources: {{- toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext: {{- include "aigw.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: keys
+              mountPath: /etc/gateway
+              readOnly: true
+            {{- if .Values.gateway.upstream.existingSecret }}
+            - name: upstream
+              mountPath: /etc/upstream
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+            {{- include "aigw.otelVolumeMount" . | nindent 12 }}
+      volumes:
+        - name: keys
+          secret:
+            secretName: ai-gateway-keys
+            defaultMode: 0440
+        {{- if .Values.gateway.upstream.existingSecret }}
+        - name: upstream
+          secret:
+            secretName: {{ .Values.gateway.upstream.existingSecret }}
+            defaultMode: 0440
+        {{- end }}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+        {{- include "aigw.otelVolume" . | nindent 8 }}

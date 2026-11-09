@@ -1,0 +1,10 @@
+AI Gateway deployed (provider: {{ .Values.gateway.provider }}).
+
+Get a tenant API key:
+  kubectl -n {{ .Release.Namespace }} get secret ai-gateway-keys -o jsonpath='{.data.api-keys}' | base64 -d
+
+Send a request (port-forward):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/ai-gateway 8080:{{ .Values.service.port }}
+  curl -s localhost:8080/v1/chat/completions -H "Authorization: Bearer <key>" \
+    -H 'content-type: application/json' \
+    -d '{"model":"mock-small","messages":[{"role":"user","content":"What is an SLO?"}]}'

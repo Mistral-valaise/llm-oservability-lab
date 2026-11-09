@@ -1,0 +1,17 @@
+openshift: {{ .Values.openshift }}
+image:
+  repository: {{ .Values.gateway.image.repository }}
+  tag: {{ .Values.gateway.image.tag | quote }}
+  pullPolicy: {{ .Values.gateway.image.pullPolicy }}
+gateway:
+  provider: {{ .Values.gateway.provider }}
+loadgen:
+  enabled: {{ .Values.components.loadgen }}
+  rps: {{ .Values.gateway.loadgenRps }}
+otel:
+  endpoint: {{ if .Values.security.mtls }}https{{ else }}http{{ end }}://otel-collector:4317
+  tlsSecret: {{ if .Values.security.mtls }}otel-client-tls{{ else }}""{{ end }}
+  environment: {{ .Environment.Name }}
+networkPolicy:
+  enabled: {{ .Values.security.networkPolicies }}
+  ingressFrom: {{ .Values.expose.ingressFrom | toJson }}

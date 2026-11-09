@@ -1,0 +1,45 @@
+# Single-binary Tempo. The metrics-generator derives RED metrics and the
+# service graph from spans and remote-writes them to Prometheus.
+fullnameOverride: tempo
+replicas: 1
+persistence:
+  enabled: true
+  size: {{ .Values.storage.tempo }}
+  {{- with .Values.storage.className }}
+  storageClassName: {{ . }}
+  {{- end }}
+
+tempo:
+  reportingEnabled: false
+  retention: {{ .Values.retention.traces }}
+  resources: {{ .Values.resources.medium | toJson }}
+  receivers:
+    jaeger: null
+    otlp:
+      protocols:
+        grpc: {endpoint: "0.0.0.0:4317"}
+        http: null
+  {{- if .Values.components.prometheus }}
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: http://prometheus-server:9090/api/v1/write
+  overrides:
+    defaults:
+      metrics_generator:
+        processors: [service-graphs, span-metrics]
+  {{- end }}
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: {drop: [ALL]}
+
+{{- if .Values.openshift }}
+securityContext:
+  runAsUser: null
+  runAsGroup: null
+  fsGroup: null
+  runAsNonRoot: true
+{{- end }}
+
+serviceAccount:
+  automountServiceAccountToken: false

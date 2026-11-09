@@ -1,0 +1,87 @@
+# Namespace-scoped Prometheus: no ClusterRole, no Kubernetes service discovery.
+# Application metrics arrive via the OTLP receiver (pushed by the collector);
+# Tempo's metrics-generator pushes service-graph metrics via remote_write.
+rbac:
+  create: false
+serviceAccounts:
+  server:
+    create: true
+    automountServiceAccountToken: false
+
+alertmanager: {enabled: false}
+kube-state-metrics: {enabled: false}
+prometheus-node-exporter: {enabled: false}
+prometheus-pushgateway: {enabled: false}
+
+server:
+  extraFlags:
+    - web.enable-lifecycle
+    - web.enable-otlp-receiver
+    - web.enable-remote-write-receiver
+    - enable-feature=exemplar-storage
+  retention: {{ .Values.retention.metrics }}
+  global:
+    scrape_interval: 30s
+    evaluation_interval: 30s
+  otlp:
+    promote_resource_attributes:
+      - service.namespace
+      - deployment.environment.name
+      - k8s.namespace.name
+      - k8s.pod.name
+  tsdb:
+    out_of_order_time_window: 30m
+  exemplars:
+    max_exemplars: 100000
+  service:
+    servicePort: 9090
+  persistentVolume:
+    enabled: true
+    size: {{ .Values.storage.prometheus }}
+    {{- with .Values.storage.className }}
+    storageClass: {{ . }}
+    {{- end }}
+  resources: {{ .Values.resources.medium | toJson }}
+  {{- if .Values.openshift }}
+  # OpenShift restricted-v2 assigns UID, GID and fsGroup from the namespace range.
+  securityContext:
+    runAsUser: null
+    runAsGroup: null
+    fsGroup: null
+    runAsNonRoot: true
+  {{- end }}
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: {drop: [ALL]}
+    seccompProfile: {type: RuntimeDefault}
+
+configmapReload:
+  prometheus:
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities: {drop: [ALL]}
+
+scrapeConfigs:
+  kubernetes-api-servers: {enabled: false}
+  kubernetes-nodes: {enabled: false}
+  kubernetes-nodes-cadvisor: {enabled: false}
+  kubernetes-service-endpoints: {enabled: false}
+  kubernetes-service-endpoints-slow: {enabled: false}
+  prometheus-pushgateway: {enabled: false}
+  kubernetes-services: {enabled: false}
+  kubernetes-pods: {enabled: false}
+  kubernetes-pods-slow: {enabled: false}
+  {{- if .Values.components.collector }}
+  otel-collector:
+    static_configs: [{targets: ["otel-collector:8888"]}]
+  {{- end }}
+  {{- if .Values.components.tempo }}
+  tempo:
+    static_configs: [{targets: ["tempo:3200"]}]
+  {{- end }}
+  {{- if .Values.components.loki }}
+  loki:
+    static_configs: [{targets: ["loki:3100"]}]
+  {{- end }}

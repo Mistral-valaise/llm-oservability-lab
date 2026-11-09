@@ -1,0 +1,37 @@
+openshift: false
+
+tls:
+  # -- Generate a private CA plus collector server and client certificates for OTLP mTLS.
+  enabled: true
+  validityDays: 365
+  collectorService: otel-collector
+
+networkPolicy:
+  enabled: true
+  # -- Deny all ingress and egress in the namespace unless a policy allows it.
+  defaultDeny: true
+  # -- Peers outside the namespace allowed to reach exposed UIs (the ingress controller).
+  ingressFrom: []
+  # -- Pod labels of each component, as set by the upstream charts.
+  selectors:
+    gateway: {app.kubernetes.io/name: ai-gateway}
+    loadgen: {app.kubernetes.io/name: loadgen}
+    collector: {app.kubernetes.io/name: opentelemetry-collector}
+    prometheus: {app.kubernetes.io/name: prometheus, app.kubernetes.io/component: server}
+    loki: {app.kubernetes.io/name: loki}
+    tempo: {app.kubernetes.io/name: tempo}
+    grafana: {app.kubernetes.io/name: grafana}
+
+expose:
+  # -- ingress (k3d/Traefik), route (OpenShift) or none
+  mode: ingress
+  ingressClassName: ""
+  # -- Hosts become <name>.<domain>. localtest.me resolves to 127.0.0.1. Ignored for routes without a domain.
+  domain: localtest.me
+  targets:
+    - {name: grafana, service: grafana, port: 80, targetPort: grafana}
+    - {name: gateway, service: ai-gateway, port: 8080, targetPort: http}
+
+dashboards:
+  enabled: true
+  configMapName: grafana-dashboards

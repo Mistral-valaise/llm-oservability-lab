@@ -1,0 +1,23 @@
+# Red Hat OpenShift Developer Sandbox: one namespace, no cluster-admin,
+# restricted-v2 SCC (random UID), small quota, workloads idle after 12 h.
+namespace: {{ requiredEnv "NAMESPACE" }}
+openshift: true
+
+gateway:
+  image:
+    tag: {{ env "IMAGE_TAG" | default "main" }}
+    pullPolicy: Always
+  loadgenRps: 1
+
+expose:
+  mode: route
+  domain: ""
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          policy-group.network.openshift.io/ingress: ""
+
+storage:
+  prometheus: 1Gi
+  loki: 1Gi
+  tempo: 1Gi

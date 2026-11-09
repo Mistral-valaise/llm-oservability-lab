@@ -1,0 +1,19 @@
+# Local k3d cluster (k3s): Traefik ingress, kube-router enforces NetworkPolicies.
+namespace: llm-lab
+
+gateway:
+  image:
+    tag: dev                # built locally and imported with `k3d image import`
+    pullPolicy: IfNotPresent
+
+expose:
+  mode: ingress
+  domain: localtest.me      # *.localtest.me -> 127.0.0.1
+  ingressClassName: traefik
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: traefik

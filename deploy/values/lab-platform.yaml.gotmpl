@@ -1,0 +1,19 @@
+openshift: {{ .Values.openshift }}
+tls:
+  enabled: {{ .Values.security.mtls }}
+networkPolicy:
+  enabled: {{ .Values.security.networkPolicies }}
+  ingressFrom: {{ .Values.expose.ingressFrom | toJson }}
+expose:
+  mode: {{ .Values.expose.mode }}
+  domain: {{ .Values.expose.domain | quote }}
+  ingressClassName: {{ .Values.expose.ingressClassName | quote }}
+  targets:
+    {{- if .Values.components.grafana }}
+    - {name: grafana, service: grafana, port: 80, targetPort: grafana}
+    {{- end }}
+    {{- if .Values.components.gateway }}
+    - {name: gateway, service: ai-gateway, port: 8080, targetPort: http}
+    {{- end }}
+dashboards:
+  enabled: {{ .Values.components.grafana }}

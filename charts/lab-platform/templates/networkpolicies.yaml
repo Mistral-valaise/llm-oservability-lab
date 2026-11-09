@@ -1,0 +1,154 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $s := .Values.networkPolicy.selectors }}
+{{- if .Values.networkPolicy.defaultDeny }}
+# Zero trust inside the namespace: nothing talks to anything unless allowed below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  labels: {{- include "lab.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  labels: {{- include "lab.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+        - {port: 5353, protocol: UDP}
+        - {port: 5353, protocol: TCP}
+---
+# OTel Collector: OTLP/gRPC (mTLS) in from workloads, self-metrics scraped by Prometheus,
+# out to the three backends.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector
+  labels: {{- include "lab.labels" . | nindent 4 }}
+spec:
+  {{- include "lab.sel" $s.collector | nindent 2 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{- include "lab.sel" $s.gateway | nindent 10 }}
+        - {{- include "lab.sel" $s.loadgen | nindent 10 }}
+      ports: [{port: 4317, protocol: TCP}]
+    - from:
+        - {{- include "lab.sel" $s.prometheus | nindent 10 }}
+      ports: [{port: 8888, protocol: TCP}]
+  egress:
+    - to:
+        - {{- include "lab.sel" $s.tempo | nindent 10 }}
+      ports: [{port: 4317, protocol: TCP}]
+    - to:
+        - {{- include "lab.sel" $s.loki | nindent 10 }}
+      ports: [{port: 3100, protocol: TCP}]
+    - to:
+        - {{- include "lab.sel" $s.prometheus | nindent 10 }}
+      ports: [{port: 9090, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus
+  labels: {{- include "lab.labels" . | nindent 4 }}
+spec:
+  {{- include "lab.sel" $s.prometheus | nindent 2 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{- include "lab.sel" $s.collector | nindent 10 }}
+        - {{- include "lab.sel" $s.grafana | nindent 10 }}
+        - {{- include "lab.sel" $s.tempo | nindent 10 }}
+      ports: [{port: 9090, protocol: TCP}]
+  egress:
+    - to:
+        - {{- include "lab.sel" $s.collector | nindent 10 }}
+      ports: [{port: 8888, protocol: TCP}]
+    - to:
+        - {{- include "lab.sel" $s.tempo | nindent 10 }}
+      ports: [{port: 3200, protocol: TCP}]
+    - to:
+        - {{- include "lab.sel" $s.loki | nindent 10 }}
+      ports: [{port: 3100, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loki
+  labels: {{- include "lab.labels" . | nindent 4 }}
+spec:
+  {{- include "lab.sel" $s.loki | nindent 2 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{- include "lab.sel" $s.collector | nindent 10 }}
+        - {{- include "lab.sel" $s.grafana | nindent 10 }}
+        - {{- include "lab.sel" $s.prometheus | nindent 10 }}
+      ports: [{port: 3100, protocol: TCP}]
+    - from:  # memberlist and gRPC between Loki's own components
+        - {{- include "lab.sel" $s.loki | nindent 10 }}
+  egress:
+    - to:
+        - {{- include "lab.sel" $s.loki | nindent 10 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tempo
+  labels: {{- include "lab.labels" . | nindent 4 }}
+spec:
+  {{- include "lab.sel" $s.tempo | nindent 2 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{- include "lab.sel" $s.collector | nindent 10 }}
+      ports: [{port: 4317, protocol: TCP}]
+    - from:
+        - {{- include "lab.sel" $s.grafana | nindent 10 }}
+        - {{- include "lab.sel" $s.prometheus | nindent 10 }}
+      ports: [{port: 3200, protocol: TCP}]
+    - from:
+        - {{- include "lab.sel" $s.tempo | nindent 10 }}
+  egress:
+    - to:  # metrics-generator remote_write (service graph, span metrics)
+        - {{- include "lab.sel" $s.prometheus | nindent 10 }}
+      ports: [{port: 9090, protocol: TCP}]
+    - to:
+        - {{- include "lab.sel" $s.tempo | nindent 10 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana
+  labels: {{- include "lab.labels" . | nindent 4 }}
+spec:
+  {{- include "lab.sel" $s.grafana | nindent 2 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- with .Values.networkPolicy.ingressFrom }}
+    - from: {{- toYaml . | nindent 8 }}
+      ports: [{port: 3000, protocol: TCP}]
+    {{- end }}
+  egress:
+    - to:
+        - {{- include "lab.sel" $s.prometheus | nindent 10 }}
+      ports: [{port: 9090, protocol: TCP}]
+    - to:
+        - {{- include "lab.sel" $s.loki | nindent 10 }}
+      ports: [{port: 3100, protocol: TCP}]
+    - to:
+        - {{- include "lab.sel" $s.tempo | nindent 10 }}
+      ports: [{port: 3200, protocol: TCP}]
+{{- end }}

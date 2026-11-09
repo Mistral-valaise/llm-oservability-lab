@@ -1,0 +1,10 @@
+apiVersion: v2
+name: ai-gateway
+description: OpenAI-compatible LLM gateway with OpenTelemetry GenAI instrumentation, plus a traffic generator
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [opentelemetry, llm, genai, observability]
+maintainers:
+  - name: Mistral-valaise
+    url: https://github.com/Mistral-valaise

@@ -1,0 +1,55 @@
+{{- if .Values.loadgen.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  labels:
+    app.kubernetes.io/name: loadgen
+    {{- include "aigw.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loadgen
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loadgen
+        {{- include "aigw.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: ai-gateway
+      automountServiceAccountToken: false
+      securityContext: {{- include "aigw.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: loadgen
+          image: {{ include "aigw.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["loadgen"]
+          env:
+            - name: TARGET_URL
+              value: "http://ai-gateway:{{ .Values.service.port }}"
+            - name: LOADGEN_RPS
+              value: {{ .Values.loadgen.rps | quote }}
+            - name: LOADGEN_NOISY_TENANT
+              value: {{ .Values.loadgen.noisyTenant | quote }}
+            - name: GATEWAY_API_KEYS_FILE
+              value: /etc/gateway/api-keys
+            - name: OTEL_SERVICE_NAME
+              value: loadgen
+            {{- include "aigw.otelEnv" . | nindent 12 }}
+          resources: {{- toYaml .Values.loadgen.resources | nindent 12 }}
+          securityContext: {{- include "aigw.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: keys
+              mountPath: /etc/gateway
+              readOnly: true
+            {{- include "aigw.otelVolumeMount" . | nindent 12 }}
+      volumes:
+        - name: keys
+          secret:
+            secretName: ai-gateway-keys
+            items: [{key: api-keys, path: api-keys}]
+            defaultMode: 0440
+        {{- include "aigw.otelVolume" . | nindent 8 }}
+{{- end }}

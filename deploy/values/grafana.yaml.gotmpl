@@ -1,0 +1,104 @@
+# Grafana with provisioned datasources that are wired for correlation:
+# metric exemplar -> trace, trace -> logs, log -> trace, trace -> service graph.
+rbac:
+  create: true
+  namespaced: true
+serviceAccount:
+  automountServiceAccountToken: false
+testFramework:
+  enabled: false
+initChownData:
+  enabled: false      # would run as root; not needed without persistence
+persistence:
+  enabled: false      # everything is provisioned from Git
+
+resources: {{ .Values.resources.small | toJson }}
+
+{{- if .Values.openshift }}
+securityContext:
+  runAsUser: null
+  runAsGroup: null
+  fsGroup: null
+  runAsNonRoot: true
+{{- end }}
+
+# Admin password is generated into a Secret by the chart: `make grafana-password`.
+grafana.ini:
+  server:
+    {{- if eq .Values.expose.mode "ingress" }}
+    root_url: http://grafana.{{ .Values.expose.domain }}:8080
+    {{- end }}
+  analytics:
+    reporting_enabled: false
+    check_for_updates: false
+    check_for_plugin_updates: false
+  auth.anonymous:
+    enabled: false
+  security:
+    cookie_secure: {{ eq .Values.expose.mode "route" }}
+    disable_gravatar: true
+  users:
+    allow_sign_up: false
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        url: http://prometheus-server:9090
+        isDefault: true
+        jsonData:
+          httpMethod: POST
+          exemplarTraceIdDestinations:
+            - name: trace_id
+              datasourceUid: tempo
+      - name: Loki
+        uid: loki
+        type: loki
+        url: http://loki:3100
+        jsonData:
+          derivedFields:
+            - name: TraceID
+              matcherType: label
+              matcherRegex: trace_id
+              datasourceUid: tempo
+              url: "$${__value.raw}"
+              urlDisplayLabel: Open trace
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        url: http://tempo:3200
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+            filterByTraceID: true
+            spanStartTimeShift: "-5m"
+            spanEndTimeShift: "5m"
+            tags: [{key: service.name, value: service_name}]
+          tracesToMetrics:
+            datasourceUid: prometheus
+            tags: [{key: service.name, value: job}]
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+          lokiSearch:
+            datasourceUid: loki
+
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: lab
+        orgId: 1
+        folder: LLM Observability Lab
+        type: file
+        disableDeletion: true
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/lab
+
+dashboardsConfigMaps:
+  lab: grafana-dashboards

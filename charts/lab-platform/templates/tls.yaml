@@ -1,0 +1,46 @@
+{{- if .Values.tls.enabled }}
+{{- /*
+A private CA signs one server certificate for the collector and one client
+certificate for the workloads. Certificates are generated once and reused on
+upgrade (lookup). The CA private key is never stored.
+*/}}
+{{- $ns := .Release.Namespace }}
+{{- $svc := .Values.tls.collectorService }}
+{{- $server := lookup "v1" "Secret" $ns "otel-collector-tls" }}
+{{- $client := lookup "v1" "Secret" $ns "otel-client-tls" }}
+{{- $sd := dict }}
+{{- $cd := dict }}
+{{- if and $server $client }}
+{{- $sd = $server.data }}
+{{- $cd = $client.data }}
+{{- else }}
+{{- $days := int .Values.tls.validityDays }}
+{{- $ca := genCA "llm-observability-lab-ca" $days }}
+{{- $alt := list $svc (printf "%s.%s" $svc $ns) (printf "%s.%s.svc" $svc $ns) (printf "%s.%s.svc.cluster.local" $svc $ns) }}
+{{- $srv := genSignedCert $svc nil $alt $days $ca }}
+{{- $cli := genSignedCert "otel-client" nil nil $days $ca }}
+{{- $sd = dict "ca.crt" ($ca.Cert | b64enc) "tls.crt" ($srv.Cert | b64enc) "tls.key" ($srv.Key | b64enc) }}
+{{- $cd = dict "ca.crt" ($ca.Cert | b64enc) "tls.crt" ($cli.Cert | b64enc) "tls.key" ($cli.Key | b64enc) }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: otel-collector-tls
+  labels: {{- include "lab.labels" . | nindent 4 }}
+type: kubernetes.io/tls
+data:
+  ca.crt: {{ get $sd "ca.crt" }}
+  tls.crt: {{ get $sd "tls.crt" }}
+  tls.key: {{ get $sd "tls.key" }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: otel-client-tls
+  labels: {{- include "lab.labels" . | nindent 4 }}
+type: kubernetes.io/tls
+data:
+  ca.crt: {{ get $cd "ca.crt" }}
+  tls.crt: {{ get $cd "tls.crt" }}
+  tls.key: {{ get $cd "tls.key" }}
+{{- end }}

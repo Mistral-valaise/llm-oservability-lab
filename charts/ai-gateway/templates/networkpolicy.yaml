@@ -1,0 +1,75 @@
+{{- if .Values.networkPolicy.enabled }}
+# The gateway accepts traffic only from loadgen and the ingress controller,
+# and may only talk to DNS, the collector and (optionally) the upstream LLM.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-gateway
+  labels: {{- include "aigw.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ai-gateway
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loadgen
+        {{- with .Values.networkPolicy.ingressFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:  # DNS inside the cluster (kube-dns on 53, OpenShift DNS on 5353)
+        - namespaceSelector: {}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+        - {port: 5353, protocol: UDP}
+        - {port: 5353, protocol: TCP}
+    - to:
+        - podSelector:
+            matchLabels: {{- toYaml .Values.networkPolicy.collectorPodLabels | nindent 14 }}
+      ports:
+        - port: 4317
+          protocol: TCP
+    {{- with .Values.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loadgen
+  labels: {{- include "aigw.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: loadgen
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:  # DNS inside the cluster (kube-dns on 53, OpenShift DNS on 5353)
+        - namespaceSelector: {}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+        - {port: 5353, protocol: UDP}
+        - {port: 5353, protocol: TCP}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ai-gateway
+      ports:
+        - port: 8080
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels: {{- toYaml .Values.networkPolicy.collectorPodLabels | nindent 14 }}
+      ports:
+        - port: 4317
+          protocol: TCP
+{{- end }}
