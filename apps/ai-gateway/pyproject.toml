@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=9.2.0", "ruff>=0.6"]
 
 [project.scripts]
 loadgen = "gateway.loadgen:main"
