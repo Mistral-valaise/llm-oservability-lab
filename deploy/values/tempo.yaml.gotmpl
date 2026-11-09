@@ -14,7 +14,15 @@ tempo:
   retention: {{ .Values.retention.traces }}
   resources: {{ .Values.resources.medium | toJson }}
   receivers:
-    jaeger: null
+    # Jaeger is off, but chart 3.x dereferences jaeger.protocols.* in
+    # _ports.tpl, so `jaeger: null` breaks the render. Null each protocol
+    # instead: no Jaeger ports are exposed and Tempo starts no listeners.
+    jaeger:
+      protocols:
+        grpc: null
+        thrift_binary: null
+        thrift_compact: null
+        thrift_http: null
     otlp:
       protocols:
         grpc: {endpoint: "0.0.0.0:4317"}
@@ -32,6 +40,7 @@ tempo:
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
     capabilities: {drop: [ALL]}
+    seccompProfile: {type: RuntimeDefault}
 
 {{- if .Values.openshift }}
 securityContext:

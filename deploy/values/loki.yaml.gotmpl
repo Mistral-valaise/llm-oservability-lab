@@ -24,6 +24,12 @@ loki:
     delete_request_store: filesystem
   analytics:
     reporting_enabled: false
+  # PSS restricted requires a seccomp profile; the chart default sets none.
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities: {drop: [ALL]}
+    seccompProfile: {type: RuntimeDefault}
   {{- if .Values.openshift }}
   podSecurityContext:
     runAsUser: null

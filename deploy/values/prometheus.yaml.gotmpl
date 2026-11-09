@@ -58,10 +58,16 @@ server:
 
 configmapReload:
   prometheus:
+    # Chart 29.46.0 defaults to v0.95.1, which upstream published for amd64
+    # only, so it fails to pull on arm64 (Apple Silicon k3d). v0.94.0 is
+    # multi-arch. Drop this pin once a newer multi-arch tag is the default.
+    image:
+      tag: v0.94.0
     containerSecurityContext:
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: true
       capabilities: {drop: [ALL]}
+      seccompProfile: {type: RuntimeDefault}
 
 scrapeConfigs:
   kubernetes-api-servers: {enabled: false}
